@@ -1,0 +1,4 @@
+ttkbootstrap
+dxcam
+opencv-python
+numpy
