@@ -2,11 +2,8 @@ import tkinter as tk
 from tkinter import messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-
-# === 修复 1: 屏蔽警告并正确导入 ===
 import warnings
 
-# 忽略 ttkbootstrap 的弃用警告，保持控制台清爽
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 from ttkbootstrap.scrolled import ScrolledText
 
@@ -92,7 +89,6 @@ class StreamerApp:
         self.log("系统初始化完成，亮色主题已加载。")
 
     def setup_ui(self):
-        # 1. 标题头
         header_frame = ttk.Frame(self.root, padding=20, bootstyle="primary")
         header_frame.pack(fill=X)
 
@@ -105,7 +101,6 @@ class StreamerApp:
         main_content = ttk.Frame(self.root, padding=15)
         main_content.pack(fill=BOTH, expand=True)
 
-        # 2. 设置区域
         settings_frame = ttk.Labelframe(main_content, text="核心参数配置", padding=15)
         settings_frame.pack(fill=X, pady=10)
 
@@ -165,10 +160,8 @@ class StreamerApp:
         # 5. 日志区域
         ttk.Label(main_content, text="运行日志", font=("Microsoft YaHei UI", 9, "bold")).pack(anchor=W, pady=(15, 5))
 
-        # 初始化带滚动条的文本框
         self.log_area = ScrolledText(main_content, height=8, font=("Consolas", 9), bootstyle="default")
         self.log_area.pack(fill=BOTH, expand=True)
-        # === 修复 2: 使用 .text 属性来设置只读 ===
         self.log_area.text.configure(state='disabled')
 
     def log(self, message, level="info"):
@@ -176,8 +169,6 @@ class StreamerApp:
 
         def _log():
             timestamp = time.strftime('%H:%M:%S')
-
-            # === 修复 2: 必须通过 .text 访问内部控件 ===
             self.log_area.text.configure(state='normal')
 
             tag = "INFO"
@@ -191,7 +182,6 @@ class StreamerApp:
             full_msg = f"[{timestamp}] {message}\n"
             self.log_area.text.insert(tk.END, full_msg, tag)
 
-            # 配置颜色
             self.log_area.text.tag_config("ERROR", foreground="#d9534f")
             self.log_area.text.tag_config("WARNING", foreground="#f0ad4e")
             self.log_area.text.tag_config("SUCCESS", foreground="#5cb85c")
@@ -358,7 +348,7 @@ class StreamerApp:
 
 
 if __name__ == "__main__":
-    # 可选主题: "cosmo" (推荐), "flatly", "yeti", "pulse"
+    # 可选主题: "cosmo", "flatly", "yeti", "pulse"
     root = ttk.Window(themename="cosmo")
 
     try:
