@@ -4,14 +4,7 @@ from ttkbootstrap.constants import *
 import warnings
 from ttkbootstrap.widgets.scrolled import ScrolledText
 
-<<<<<<< HEAD
 import multiprocessing as mp
-=======
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-from ttkbootstrap.scrolled import ScrolledText
-
-import threading
->>>>>>> 71752954dac60fd1919c3cd3da15a57a33d35217
 import socket
 import struct
 import time
@@ -216,11 +209,7 @@ class StreamerApp:
         main_content = ttk.Frame(self.root, padding=15)
         main_content.pack(fill=BOTH, expand=True)
 
-<<<<<<< HEAD
         settings_frame = ttk.Labelframe(main_content, text="Configuration", padding=15)
-=======
-        settings_frame = ttk.Labelframe(main_content, text="核心参数配置", padding=15)
->>>>>>> 71752954dac60fd1919c3cd3da15a57a33d35217
         settings_frame.pack(fill=X, pady=10)
 
         def create_entry(parent, label_text, row, variable, widget_type="entry", values=None):
@@ -270,13 +259,7 @@ class StreamerApp:
                                    bootstyle="danger", width=18)
         self.stop_btn.pack(side=RIGHT, fill=X, expand=True, padx=5)
 
-<<<<<<< HEAD
         ttk.Label(main_content, text="Runtime Log", font=("Microsoft YaHei UI", 9, "bold")).pack(anchor=W, pady=(15, 5))
-=======
-        # 5. 日志区域
-        ttk.Label(main_content, text="运行日志", font=("Microsoft YaHei UI", 9, "bold")).pack(anchor=W, pady=(15, 5))
-
->>>>>>> 71752954dac60fd1919c3cd3da15a57a33d35217
         self.log_area = ScrolledText(main_content, height=8, font=("Consolas", 9), bootstyle="default")
         self.log_area.pack(fill=BOTH, expand=True)
         self.log_area.text.configure(state='disabled')
@@ -285,7 +268,6 @@ class StreamerApp:
         timestamp = time.strftime('%H:%M:%S')
         self.log_area.text.configure(state='normal')
 
-<<<<<<< HEAD
         tag = "INFO"
         if level.upper() == "ERROR":
             tag = "ERROR"
@@ -301,39 +283,6 @@ class StreamerApp:
         self.log_area.text.tag_config("INFO", foreground="#333333")
         self.log_area.text.see(tk.END)
         self.log_area.text.configure(state='disabled')
-=======
-        def _log():
-            timestamp = time.strftime('%H:%M:%S')
-            self.log_area.text.configure(state='normal')
-
-            tag = "INFO"
-            if "错误" in message or "失败" in message:
-                tag = "ERROR"
-            elif "警告" in message:
-                tag = "WARNING"
-            elif "启动" in message:
-                tag = "SUCCESS"
-
-            full_msg = f"[{timestamp}] {message}\n"
-            self.log_area.text.insert(tk.END, full_msg, tag)
-
-            self.log_area.text.tag_config("ERROR", foreground="#d9534f")
-            self.log_area.text.tag_config("WARNING", foreground="#f0ad4e")
-            self.log_area.text.tag_config("SUCCESS", foreground="#5cb85c")
-            self.log_area.text.tag_config("INFO", foreground="#333333")
-
-            self.log_area.text.see(tk.END)
-            self.log_area.text.configure(state='disabled')
-
-        self.root.after(0, _log)
-
-    def update_stats_ui(self, fps, bitrate_mbps):
-        try:
-            self.lbl_fps.config(text=f"FPS: {fps:.1f}")
-            self.lbl_bitrate.config(text=f"Bitrate: {bitrate_mbps:.2f} Mbps")
-        except:
-            pass
->>>>>>> 71752954dac60fd1919c3cd3da15a57a33d35217
 
     def start_stream(self):
         if self.is_running: return
@@ -409,12 +358,7 @@ class StreamerApp:
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
     mp.freeze_support()
-=======
-    # 可选主题: "cosmo", "flatly", "yeti", "pulse"
-    root = ttk.Window(themename="cosmo")
->>>>>>> 71752954dac60fd1919c3cd3da15a57a33d35217
 
     try:
         from ctypes import windll
