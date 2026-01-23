@@ -1,6 +1,6 @@
 **[🇬🇧 English README](README.md)**
 
-# UltraStream Pro
+# StreamSender
 
 一款适用于局域网环境的低延迟桌面推流工具。本项目基于 Python 开发，采用多进程架构，在保证图形界面正常响应的前提下，提供稳定的 UDP 视频流传输功能。
 
