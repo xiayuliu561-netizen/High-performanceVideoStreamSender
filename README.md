@@ -1,7 +1,7 @@
 
 **[🇨🇳 中文说明](https://www.google.com/search?q=README_CN.md)**
 
-# UltraStream Pro
+# StreamSender
 
 A low-latency desktop screen streaming tool designed for Local Area Network (LAN) environments. Developed in Python, it utilizes a multiprocessing architecture to handle UDP video streaming while maintaining UI responsiveness.
 
