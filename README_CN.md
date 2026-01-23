@@ -1,76 +1,51 @@
-[**🇺🇸 English Readme**](README.md)
+**[🇬🇧 English README](README.md)**
 
-# UltraStream Sender
+# UltraStream Pro
 
-**UltraStream** 是一款基于 Python 开发的高性能、低延迟桌面屏幕推流应用。它利用 **DXCam** 实现硬件加速屏幕捕获，并使用 **UDP** 协议进行非阻塞数据传输，专为局域网（LAN）环境设计。
+一款适用于局域网环境的低延迟桌面推流工具。本项目基于 Python 开发，采用多进程架构，在保证图形界面正常响应的前提下，提供稳定的 UDP 视频流传输功能。
 
-该应用采用基于 `ttkbootstrap` 构建的现代化 GUI，支持实时性能监控（FPS/比特率）以及感兴趣区域（ROI）的动态配置。
+## 核心特性
 
-## 🚀 核心功能
+* **多进程架构**：将高负载的推流逻辑与 UI 界面进程隔离，避免了 Python 全局解释器锁 (GIL) 在高负载下导致的界面阻塞。
+* **高效流水线**：结合 **DXCam** (Windows 桌面复制 API) 获取屏幕帧，并使用 **TurboJPEG** 进行高效图像编码。
+* **内存优化**：传输层采用 `memoryview` 进行数据分片，减少了传统拷贝方式带来的内存分配开销。
+* **帧率控制**：调用 Windows 系统的高精度定时器 (`WinMM`)，提供相对稳定的帧率输出（如 60 FPS）。
 
-* **高速捕获**：利用 Windows 桌面复制 API（通过 `dxcam`），实现超低延迟的帧抓取（>60 FPS）。
-* **UDP 传输**：实现自定义的分片协议，通过 UDP 处理高吞吐量视频数据，有效避免队头阻塞（Head-of-line blocking）。
-* **现代化 GUI**：基于 "Cosmo" 主题构建的用户友好界面。
-* **实时遥测**：实时监控传输帧率和网络吞吐量。
-* **高度可配**：支持动态调整目标 IP、端口、帧率、显示器索引和 ROI 尺寸。
+## 协议结构
 
-## 🛠️ 技术架构
+为适应网络 MTU 限制，视频帧在应用层进行分片。每个 UDP 数据包包含一个 6 字节的二进制包头 (`!IBB`)：
 
-### 依赖项
-* **Python 3.8+** (必需)
-* **DXCam**：用于硬件加速屏幕捕获（仅限 Windows）。
-* **OpenCV**：用于高效的 JPEG 压缩和帧处理。
-* **Tkinter / ttkbootstrap**：用于图形用户界面。
+| 字节偏移 | 字段名 | 数据类型 | 描述 |
+| --- | --- | --- | --- |
+| 0x00 | `Frame ID` | `uint32` | 帧序列号（单调递增，用于接收端重组）。 |
+| 0x04 | `Total Pkts` | `uint8` | 当前视频帧被分割的总包数。 |
+| 0x05 | `Pkt Index` | `uint8` | 当前分片包的索引（从 0 开始）。 |
 
-### 网络协议
-应用程序通过 UDP 传输 JPEG 编码的帧。为了遵守标准的 MTU 限制并避免 IP 层分片，帧被拆分为应用层数据包（最大负载 60KB）。
+## 快速开始
 
-**数据包头部结构 (6 字节):**
-每个 UDP 数据包都带有一个使用 `struct.pack("!IBB", ...)` 打包的二进制头部：
+**系统要求:** Windows 操作系统, Python 3.8+
 
-| 偏移量 | 字段 | 类型 | 描述 |
-| :--- | :--- | :--- | :--- |
-| 0x00 | `Frame ID` | `uint32` | 视频帧的唯一标识符（单调递增）。 |
-| 0x04 | `Total Packets`| `uint8` | 当前帧被切分的总分片数。 |
-| 0x05 | `Packet Index` | `uint8` | 当前分片的序列索引（从 0 开始）。 |
+1. **安装依赖:**
+```bash
+pip install ttkbootstrap dxcam PyTurboJPEG opencv-python
 
-## 📦 安装指南
+```
 
-**注意：** 由于依赖桌面复制 API，此应用程序仅支持 **Windows** 操作系统。
 
-1.  **克隆仓库：**
-    ```bash
-    git clone [https://github.com/YOUR_USERNAME/UltraStream-Sender.git](https://github.com/YOUR_USERNAME/UltraStream-Sender.git)
-    cd UltraStream-Sender
-    ```
+2. **运行程序:**
+```bash
+python gui_sender.py
 
-2.  **安装依赖：**
-    ```bash
-    pip install -r requirements.txt
-    ```
+```
 
-## ▶️ 使用说明
 
-1.  **运行应用程序：**
-    ```bash
-    python gui_sender.py
-    ```
+3. **配置与推流**: 填写接收端的 IP 与端口，设置目标帧率与截取区域，点击 **START STREAM** 开始推流。
 
-2.  **配置参数：**
-    * **Target IP**：输入接收端机器的 IP 地址（Linux/Windows）。
-    * **Port**：指定 UDP 端口（默认：5005）。
-    * **ROI Size**：选择捕获区域的大小（例如：640x640）。
-    * **Monitor Index**：0 代表主显示器，1 代表副显示器。
+## 注意事项与限制
 
-3.  **操作：**
-    * 点击 **START** 开始传输线程。
-    * 点击 **STOP** 安全终止捕获引擎和套接字连接。
+* **平台限制**：由于依赖操作系统底层 API（`dxcam` 及 `ctypes.windll.winmm`），目前仅支持 Windows 系统。
+* **TurboJPEG 模式**：建议安装 `libjpeg-turbo64` 库以获得更好的性能。若未检测到该库，系统将自动回退至 OpenCV 进行编码。
 
-## ⚠️ 局限性
+## 许可证
 
-* **仅限 Windows**：`dxcam` 库不支持 Linux 或 macOS。
-* **网络稳定性**：由于使用无重传逻辑的 UDP（即发即弃），在网络拥塞时可能会发生丢包，导致接收端出现画面伪影或花屏。
-
-## 📄 许可证
-
-本项目基于 MIT 许可证分发。
+采用 MIT 许可证开源。
