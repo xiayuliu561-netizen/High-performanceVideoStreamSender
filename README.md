@@ -1,5 +1,5 @@
 
-**[🇨🇳 中文说明](https://www.google.com/search?q=README_CN.md)**
+**[🇨🇳 中文说明](README_CN.md)**
 
 # StreamSender
 
