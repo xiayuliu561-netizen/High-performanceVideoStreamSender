@@ -1,26 +1,26 @@
 import tkinter as tk
+from tkinter import messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import warnings
 from ttkbootstrap.widgets.scrolled import ScrolledText
 
 import multiprocessing as mp
+import queue
 import socket
 import struct
 import time
 import json
 import os
-import sys
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 try:
     from turbojpeg import TurboJPEG, TJPF_BGR
 
-    HAS_TURBOJPEG = True
+    HAS_TURBOJPEG_PACKAGE = True
 except ImportError:
-    HAS_TURBOJPEG = False
-    import cv2
+    HAS_TURBOJPEG_PACKAGE = False
 
 
 class ConfigManager:
@@ -30,13 +30,16 @@ class ConfigManager:
     @staticmethod
     def load():
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ConfigManager.CONFIG_FILE)
+        config = dict(ConfigManager.DEFAULT_CONFIG)
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
-                    return {**ConfigManager.DEFAULT_CONFIG, **json.load(f)}
+                    saved_config = json.load(f)
+                    if isinstance(saved_config, dict):
+                        config.update(saved_config)
             except Exception:
                 pass
-        return ConfigManager.DEFAULT_CONFIG
+        return ConfigManager.normalize(config)
 
     @staticmethod
     def save(data):
@@ -47,9 +50,25 @@ class ConfigManager:
         except Exception:
             pass
 
+    @staticmethod
+    def normalize(config):
+        normalized = dict(ConfigManager.DEFAULT_CONFIG)
+        normalized["ip"] = str(config.get("ip") or normalized["ip"]).strip()
+
+        for key in ("port", "roi_size", "target_fps", "monitor_idx"):
+            try:
+                normalized[key] = int(config.get(key, normalized[key]))
+            except (TypeError, ValueError):
+                pass
+
+        normalized["port"] = min(max(normalized["port"], 1), 65535)
+        normalized["roi_size"] = min(max(normalized["roi_size"], 1), 8192)
+        normalized["target_fps"] = min(max(normalized["target_fps"], 1), 240)
+        normalized["monitor_idx"] = min(max(normalized["monitor_idx"], 0), 15)
+        return normalized
+
 
 def stream_worker(cmd_queue, stats_queue, config):
-    import dxcam
     import ctypes
 
     if os.name == 'nt':
@@ -60,43 +79,77 @@ def stream_worker(cmd_queue, stats_queue, config):
     jpeg = None
 
     try:
-        if HAS_TURBOJPEG:
+        import dxcam
+
+        if HAS_TURBOJPEG_PACKAGE:
             dll_path = r"C:\libjpeg-turbo64\bin\turbojpeg.dll"
             try:
                 jpeg = TurboJPEG()
-            except Exception:
+            except Exception as turbojpeg_error:
                 if os.path.exists(dll_path):
-                    jpeg = TurboJPEG(dll_path)
-                else:
-                    raise RuntimeError("TurboJPEG DLL not found.")
+                    try:
+                        jpeg = TurboJPEG(dll_path)
+                    except Exception:
+                        jpeg = None
+                if jpeg is None:
+                    stats_queue.put({
+                        "type": "log",
+                        "msg": f"TurboJPEG unavailable, falling back to OpenCV: {turbojpeg_error}",
+                        "level": "WARNING"
+                    })
 
-        monitor_idx = config['monitor_idx']
-        roi_size = config['roi_size']
-        target_fps = config['target_fps']
-        udp_ip = config['ip']
-        udp_port = config['port']
+        if jpeg is None:
+            import cv2
+
+        monitor_idx = int(config['monitor_idx'])
+        requested_roi_size = int(config['roi_size'])
+        target_fps = int(config['target_fps'])
+        udp_ip = str(config['ip']).strip()
+        udp_port = int(config['port'])
+
+        if not udp_ip:
+            raise ValueError("Target IP is required.")
+        if not 1 <= udp_port <= 65535:
+            raise ValueError("Target port must be between 1 and 65535.")
+        if requested_roi_size < 1:
+            raise ValueError("ROI size must be greater than 0.")
+        if target_fps < 1:
+            raise ValueError("Target FPS must be greater than 0.")
 
         camera = dxcam.create(output_idx=monitor_idx, output_color="BGR")
+        if camera is None:
+            raise RuntimeError("Failed to create DXCam camera.")
+
         temp_frame = camera.grab()
         if temp_frame is None:
             stats_queue.put({"type": "error", "msg": "Failed to grab screen. Check monitor index."})
             return
 
         screen_h, screen_w, _ = temp_frame.shape
+        roi_size = min(requested_roi_size, screen_w, screen_h)
         left = max(0, (screen_w - roi_size) // 2)
         top = max(0, (screen_h - roi_size) // 2)
+        right = min(screen_w, left + roi_size)
+        bottom = min(screen_h, top + roi_size)
+
+        if roi_size != requested_roi_size:
+            stats_queue.put({
+                "type": "log",
+                "msg": f"ROI reduced from {requested_roi_size} to {roi_size} to fit the selected screen.",
+                "level": "WARNING"
+            })
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)
 
-        camera.start(target_fps=target_fps, video_mode=True, region=(left, top, left + roi_size, top + roi_size))
+        camera.start(target_fps=target_fps, video_mode=True, region=(left, top, right, bottom))
 
-        encoder_type = 'TurboJPEG' if HAS_TURBOJPEG else 'OpenCV'
+        encoder_type = 'TurboJPEG' if jpeg is not None else 'OpenCV'
         stats_queue.put(
             {"type": "log", "msg": f"Stream started on {udp_ip}:{udp_port} [{encoder_type}]", "level": "SUCCESS"})
 
-        MAX_PAYLOAD = 60000
-        header_struct = struct.Struct("!IBB")
+        max_payload = 1400
+        header_struct = struct.Struct("!IHH")
 
         network_frame_id = 0
         stats_frame_counter = 0
@@ -107,10 +160,16 @@ def stream_worker(cmd_queue, stats_queue, config):
         is_running = True
 
         while is_running:
-            if not cmd_queue.empty():
-                cmd = cmd_queue.get_nowait()
-                if cmd == 'STOP':
+            while True:
+                try:
+                    cmd = cmd_queue.get_nowait()
+                except queue.Empty:
                     break
+                if cmd == 'STOP':
+                    is_running = False
+                    break
+            if not is_running:
+                break
 
             start_time = time.perf_counter()
 
@@ -119,23 +178,27 @@ def stream_worker(cmd_queue, stats_queue, config):
                 time.sleep(0.001)
                 continue
 
-            if HAS_TURBOJPEG:
+            if jpeg is not None:
                 buffer = jpeg.encode(frame, quality=85, pixel_format=TJPF_BGR)
             else:
-                _, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+                ok, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+                if not ok:
+                    continue
                 buffer = buf.tobytes()
 
             data_view = memoryview(buffer)
             size = len(data_view)
-            num_packets = (size + MAX_PAYLOAD - 1) // MAX_PAYLOAD
+            num_packets = (size + max_payload - 1) // max_payload
+            if num_packets > 65535:
+                raise RuntimeError(f"Encoded frame is too large to fragment: {num_packets} packets.")
 
-            frame_id = network_frame_id % 4294967295
-            network_frame_id += 1
+            frame_id = network_frame_id & 0xFFFFFFFF
+            network_frame_id = (network_frame_id + 1) & 0xFFFFFFFF
             stats_frame_counter += 1
 
             for i in range(num_packets):
-                start = i * MAX_PAYLOAD
-                end = min((i + 1) * MAX_PAYLOAD, size)
+                start = i * max_payload
+                end = min((i + 1) * max_payload, size)
                 packet = header_struct.pack(frame_id, num_packets, i) + data_view[start:end].tobytes()
                 sock.sendto(packet, (udp_ip, udp_port))
                 byte_counter += len(packet)
@@ -162,15 +225,15 @@ def stream_worker(cmd_queue, stats_queue, config):
         if os.name == 'nt':
             ctypes.windll.winmm.timeEndPeriod(1)
 
-        if camera and camera.is_capturing:
+        if camera and getattr(camera, "is_capturing", False):
             camera.stop()
             time.sleep(0.1)
 
-        if sock: sock.close()
+        if sock:
+            sock.close()
 
         stats_queue.put({"type": "stopped"})
         time.sleep(0.2)
-        os._exit(0)
 
 
 class StreamerApp:
@@ -189,7 +252,7 @@ class StreamerApp:
 
         self.setup_ui()
 
-        if HAS_TURBOJPEG:
+        if HAS_TURBOJPEG_PACKAGE:
             self.log("Service initialized.", "info")
         else:
             self.log("Service initialized (OpenCV fallback mode).", "warning")
@@ -285,17 +348,17 @@ class StreamerApp:
         self.log_area.text.configure(state='disabled')
 
     def start_stream(self):
-        if self.is_running: return
+        if self.is_running:
+            return
 
-        config_data = {
-            "ip": self.ip_var.get(), "port": self.port_var.get(),
-            "roi_size": self.roi_var.get(), "target_fps": self.fps_var.get(),
-            "monitor_idx": self.monitor_var.get()
-        }
+        config_data = self.get_validated_config()
+        if config_data is None:
+            return
+
         ConfigManager.save(config_data)
 
-        while not self.cmd_queue.empty(): self.cmd_queue.get()
-        while not self.stats_queue.empty(): self.stats_queue.get()
+        self.drain_queue(self.cmd_queue)
+        self.drain_queue(self.stats_queue)
 
         self.stream_process = mp.Process(target=stream_worker, args=(self.cmd_queue, self.stats_queue, config_data),
                                          daemon=True)
@@ -308,19 +371,18 @@ class StreamerApp:
         self.log("Initializing worker process...", "SUCCESS")
 
     def stop_stream(self):
-        if not self.is_running: return
+        if not self.is_running:
+            return
         self.log("Stopping stream...", "warning")
         self.status_badge.config(text="STOPPING", bootstyle="warning")
         self.cmd_queue.put('STOP')
 
     def poll_stats(self):
-        if self.is_running and self.stream_process and not self.stream_process.is_alive():
-            if self.stats_queue.empty():
-                self.log("Worker process terminated unexpectedly.", "ERROR")
-                self.reset_ui_state()
-
-        while not self.stats_queue.empty():
-            msg = self.stats_queue.get()
+        while True:
+            try:
+                msg = self.stats_queue.get_nowait()
+            except queue.Empty:
+                break
             msg_type = msg.get("type")
 
             if msg_type == "stats":
@@ -335,7 +397,56 @@ class StreamerApp:
                 self.log("Stream stopped.")
                 self.reset_ui_state()
 
+        if self.is_running and self.stream_process and not self.stream_process.is_alive():
+            self.stream_process.join(timeout=0)
+            if self.is_running:
+                self.log("Worker process terminated unexpectedly.", "ERROR")
+                self.reset_ui_state()
+
         self.root.after(100, self.poll_stats)
+
+    def get_validated_config(self):
+        try:
+            config_data = {
+                "ip": self.ip_var.get().strip(),
+                "port": int(self.port_var.get()),
+                "roi_size": int(self.roi_var.get()),
+                "target_fps": int(self.fps_var.get()),
+                "monitor_idx": int(self.monitor_var.get())
+            }
+        except (tk.TclError, ValueError):
+            self.show_validation_error("Port, ROI size, FPS, and monitor index must be valid integers.")
+            return None
+
+        if not config_data["ip"]:
+            self.show_validation_error("Target IP is required.")
+            return None
+        if not 1 <= config_data["port"] <= 65535:
+            self.show_validation_error("Target port must be between 1 and 65535.")
+            return None
+        if not 1 <= config_data["roi_size"] <= 8192:
+            self.show_validation_error("ROI size must be between 1 and 8192.")
+            return None
+        if not 1 <= config_data["target_fps"] <= 240:
+            self.show_validation_error("Target FPS must be between 1 and 240.")
+            return None
+        if not 0 <= config_data["monitor_idx"] <= 15:
+            self.show_validation_error("Monitor index must be between 0 and 15.")
+            return None
+
+        return config_data
+
+    def show_validation_error(self, message):
+        self.log(message, "ERROR")
+        messagebox.showerror("Invalid configuration", message)
+
+    @staticmethod
+    def drain_queue(mp_queue):
+        while True:
+            try:
+                mp_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def reset_ui_state(self):
         self.is_running = False

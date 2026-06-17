@@ -14,13 +14,13 @@ A low-latency desktop screen streaming tool designed for Local Area Network (LAN
 
 ## Protocol Structure
 
-To adhere to network MTU limits, video frames are fragmented at the application layer. Each UDP packet includes a 6-byte header (`!IBB`):
+To reduce IP-level fragmentation, video frames are fragmented at the application layer. Each UDP packet includes an 8-byte header (`!IHH`):
 
 | Offset | Field | Type | Description |
 | --- | --- | --- | --- |
 | 0x00 | `Frame ID` | `uint32` | Monotonically increasing frame sequence. |
-| 0x04 | `Total Pkts` | `uint8` | Total number of fragments for the current frame. |
-| 0x05 | `Pkt Index` | `uint8` | Current fragment index (0-based). |
+| 0x04 | `Total Pkts` | `uint16` | Total number of fragments for the current frame. |
+| 0x06 | `Pkt Index` | `uint16` | Current fragment index (0-based). |
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ To adhere to network MTU limits, video frames are fragmented at the application 
 
 1. **Install Dependencies:**
 ```bash
-pip install ttkbootstrap dxcam PyTurboJPEG opencv-python
+pip install -r requirements.txt
 
 ```
 
@@ -45,7 +45,7 @@ python gui_sender.py
 ## Notes & Limitations
 
 * **Platform Compatibility**: Currently relies on Windows-specific APIs (`dxcam` and `ctypes.windll.winmm`). Linux and macOS are not supported.
-* **TurboJPEG Fallback**: Installing `libjpeg-turbo64` is recommended for optimal performance. The system will automatically fall back to OpenCV encoding if the library is not found.
+* **TurboJPEG Fallback**: Installing `libjpeg-turbo64` is recommended for optimal performance. The system will automatically fall back to OpenCV encoding if TurboJPEG cannot be initialized.
 
 ## License
 

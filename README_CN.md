@@ -13,13 +13,13 @@
 
 ## 协议结构
 
-为适应网络 MTU 限制，视频帧在应用层进行分片。每个 UDP 数据包包含一个 6 字节的二进制包头 (`!IBB`)：
+为减少 IP 层分片，视频帧在应用层进行分片。每个 UDP 数据包包含一个 8 字节的二进制包头 (`!IHH`)：
 
 | 字节偏移 | 字段名 | 数据类型 | 描述 |
 | --- | --- | --- | --- |
 | 0x00 | `Frame ID` | `uint32` | 帧序列号（单调递增，用于接收端重组）。 |
-| 0x04 | `Total Pkts` | `uint8` | 当前视频帧被分割的总包数。 |
-| 0x05 | `Pkt Index` | `uint8` | 当前分片包的索引（从 0 开始）。 |
+| 0x04 | `Total Pkts` | `uint16` | 当前视频帧被分割的总包数。 |
+| 0x06 | `Pkt Index` | `uint16` | 当前分片包的索引（从 0 开始）。 |
 
 ## 快速开始
 
@@ -27,7 +27,7 @@
 
 1. **安装依赖:**
 ```bash
-pip install ttkbootstrap dxcam PyTurboJPEG opencv-python
+pip install -r requirements.txt
 
 ```
 
@@ -44,7 +44,7 @@ python gui_sender.py
 ## 注意事项与限制
 
 * **平台限制**：由于依赖操作系统底层 API（`dxcam` 及 `ctypes.windll.winmm`），目前仅支持 Windows 系统。
-* **TurboJPEG 模式**：建议安装 `libjpeg-turbo64` 库以获得更好的性能。若未检测到该库，系统将自动回退至 OpenCV 进行编码。
+* **TurboJPEG 模式**：建议安装 `libjpeg-turbo64` 库以获得更好的性能。若 TurboJPEG 无法初始化，系统将自动回退至 OpenCV 进行编码。
 
 ## 许可证
 
